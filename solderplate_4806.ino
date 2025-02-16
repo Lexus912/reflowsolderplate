@@ -4,20 +4,36 @@
 
 // Origin of the basecode is Chris Halsall 
 // There are a few challnges with this code and pcb design so please be carful.
+// Chat gtp code is where chapt gtp did the code form the old version the PIN ASSIGNMNET IS WRONG FOR V3.0!!
 
-#include <avr/io.h>
-#include <avr/eeprom.h>
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#include <avr/io.h>  // Chat gtp code
+#include <avr/eeprom.h> // Chat gtp code
+#include <Wire.h> // Chat gtp code
+#include <Adafruit_GFX.h> // Chat gtp code
+#include <Adafruit_SSD1306.h> // Chat gtp code
 
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+//Version Definitions
+ static const PROGMEM float hw = 3.0;
+ static const PROGMEM float sw = 0.1;
 
-#define MOSFET_PIN PIN3_bm   // CHECK YOUR PINS, PA3 Heater mosfet pin
-#define BUTTON_PIN PIN7_bm   // CHECK YOUR PINS, PA7 Button 1
-#define TEMP_SENSOR_PIN 6    // CHECK YOUR PINS, AIN6 ON PCB temp sensor
+#define SCREEN_WIDTH 128 // Chat gtp code
+#define SCREEN_HEIGHT 64 // Chat gtp code
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1); // Chat gtp code
+
+#define MOSFET_PIN PIN3_bm   // CHECK YOUR PINS, PA3 Heater mosfet pin // Chat gtp code
+#define BUTTON_PIN_UP PIN7_bm   // CHECK YOUR PINS, PA7 Button 1 // Chat gtp code
+#define BUTTON_PIN_DOWN PIN6_BM // CHECK YOUR PINS, 
+#define TEMP_SENSOR_PIN 6    // CHECK YOUR PINS, AIN6 ON PCB temp sensor // Chat gtp code
+#define VCC_SENSOR_PIN ADC0 // CHECK YOUR PINS. This is for adc to check voltage
+
+//Temperature Info
+ byte maxTempArray[] = { 140, 150, 160, 170, 180 };
+ byte maxTempIndex = 0;
+ byte tempIndexAddr = 1;
+
+//Voltage Measurement Info
+ float vConvert = 52.00;
+ float vMin = 10.50;
 
 //Solder Reflow Plate Logo
  static const uint8_t PROGMEM logo[] = { 
@@ -52,38 +68,97 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
  static const uint8_t logo_width = 128;
  static const uint8_t logo_height = 27;
 
+//Heating Animation
+ static const uint8_t PROGMEM heat_animate[] = {
+   0b00000001, 0b00000000,
+   0b00000001, 0b10000000,
+   0b00000001, 0b10000000,
+   0b00000001, 0b01000000,
+   0b00000010, 0b01000000,
+   0b00100010, 0b01000100,
+   0b00100100, 0b00100100,
+   0b01010101, 0b00100110,
+   0b01001001, 0b10010110,
+   0b10000010, 0b10001001,
+   0b10100100, 0b01000001,
+   0b10011000, 0b01010010,
+   0b01000100, 0b01100010,
+   0b00100011, 0b10000100,
+   0b00011000, 0b00011000,
+   0b00000111, 0b11100000
+ };
+ static const uint8_t heat_animate_width = 16;
+ static const uint8_t heat_animate_height = 16;
+
+//Tick
+ static const uint8_t PROGMEM tick[] = {
+   0b00000000, 0b00000100,
+   0b00000000, 0b00001010,
+   0b00000000, 0b00010101,
+   0b00000000, 0b00101010,
+   0b00000000, 0b01010100,
+   0b00000000, 0b10101000,
+   0b00000001, 0b01010000,
+   0b00100010, 0b10100000,
+   0b01010101, 0b01000000,
+   0b10101010, 0b10000000,
+   0b01010101, 0b00000000,
+   0b00101010, 0b00000000,
+   0b00010100, 0b00000000,
+   0b00001000, 0b00000000,
+   0b01111111, 0b11100000
+ };
+ static const uint8_t tick_width = 16;
+ static const uint8_t tick_height = 15;
 
 void setup() {
-    // setup button and Mosfet
-    PORTA.DIRSET = MOSFET_PIN; // sett Heater Mosfet pin
-    PORTA.OUTCLR = MOSFET_PIN; // set Heater Mosfet off
+    // setup button and Mosfet // Chat gtp code
+    PORTA.DIRSET = MOSFET_PIN; // sett Heater Mosfet pin // Chat gtp code
+    PORTA.OUTCLR = MOSFET_PIN; // set Heater Mosfet off // Chat gtp code
 
-    PORTA.DIRCLR = BUTTON_PIN; //  pin for buttons input 
-    PORTA.PIN7CTRL = PORT_PULLUPEN_bm; // Use pull-up resistor
+    PORTA.DIRCLR = BUTTON_PIN_UP; //  pin for buttons input  // Chat gtp code
+    PORTA.PIN7CTRL = PORT_PULLUPEN_bm; // Use pull-up resistor // Chat gtp code
+    PORTA.DIRCLR = BUTTON_PIN_DOWN; //  pin for buttons input  
+    PORTA.PIN7CTRL = PORT_PULLUPEN_bm; // Use pull-up resistor 
+       
+ //Pull saved values from EEPROM
+    maxTempIndex = EEPROM.read(tempIndexAddr) % sizeof(maxTempArray);
+  
+    // setup  PWM on TCA0 // Chat gtp code
+    TCA0.SINGLE.CTRLA = TCA_SINGLE_CLKSEL_DIV1_gc | TCA_SINGLE_ENABLE_bm; // Chat gtp code
+    TCA0.SINGLE.CTRLB = TCA_SINGLE_WGMODE_DSBOTTOM_gc | TCA_SINGLE_CMP0EN_bm; // Chat gtp code
+    TCA0.SINGLE.PER = 255; // 8-bit PWM // Chat gtp code
 
-    // setup  PWM on TCA0
-    TCA0.SINGLE.CTRLA = TCA_SINGLE_CLKSEL_DIV1_gc | TCA_SINGLE_ENABLE_bm;
-    TCA0.SINGLE.CTRLB = TCA_SINGLE_WGMODE_DSBOTTOM_gc | TCA_SINGLE_CMP0EN_bm;
-    TCA0.SINGLE.PER = 255; // 8-bit PWM
-
-    // Setup  I2C to OLED-screen
-    Wire.begin();
-    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    // Setup  I2C to OLED-screen // Chat gtp code
+    Wire.begin(); // Chat gtp code
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C); // Chat gtp code
     display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0,0);
+    display.drawBitmap(0, 0, logo, logo_width, logo_height, SSD1306_WHITE);
+    display.setCursor(80,16);
+    display.print(F("S/W V"));
+    display.print(sw, 1);
+    display.setCursor(80,24);
+    display.print(F("H/W V"));
+    display.print(hw, 1);
     display.display();
+    delay(3000);
+    
 }
 
 void loop() {
-    // Read Button
+    // Read Button // Chat gtp code
     bool buttonPressed = !(PORTA.IN & BUTTON_PIN);
 
     if (buttonPressed) {
-        PORTA.OUTSET = MOSFET_PIN; // Turn on heater MOSFET
+        PORTA.OUTSET = MOSFET_PIN; // Turn on heater MOSFET // Chat gtp code
     } else {
-        PORTA.OUTCLR = MOSFET_PIN; // Turnb off Heater MOSFET
+        PORTA.OUTCLR = MOSFET_PIN; // Turnb off Heater MOSFET // Chat gtp code
     }
 
-    // Read temp from  ADC
+    // Read temp from  ADC // Chat gtp code
     uint16_t adcValue;
     ADC0.CTRLA = ADC_ENABLE_bm;
     ADC0.MUXPOS = ADC_MUXPOS_AIN6_gc;
@@ -92,7 +167,7 @@ void loop() {
     adcValue = ADC0.RES;
     ADC0.INTFLAGS = ADC_RESRDY_bm;
 
-    // Refresh OLED-display
+    // Refresh OLED-display // Chat gtp code
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
@@ -101,5 +176,5 @@ void loop() {
     display.print(adcValue);
     display.display();
 
-    delay(100); // Have a short break 
+    delay(100); // Have a short break  // Chat gtp code
 }
